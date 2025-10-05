@@ -1,0 +1,46 @@
+# ---------------------------
+# Python Environment & Build
+# ---------------------------
+# Virtual Environment
+venv/
+.venv/
+__pycache__/
+.mypy_cache/
+.pytest_cache/
+.tox/
+
+# Build artifacts
+*.pyc
+*.egg-info
+dist/
+build/
+
+# ---------------------------
+# Project-Specific Secrets & Data
+# ---------------------------
+
+# 1. ENVIRONMENT SECRETS (CRITICAL)
+# This file contains API keys (OpenAI, Reddit, etc.) and must NEVER be committed.
+.env
+
+# 2. VECTOR DATABASE FILES (CRITICAL)
+# ChromaDB persistence directory - these files are large, binary, and local.
+# It should be rebuilt by the indexing script, not committed.
+chroma_db/
+.chroma/
+
+# 3. Streamlit & FastAPI Cache
+# Streamlit local cache
+.streamlit/
+
+# ---------------------------
+# Common IDE/OS Files
+# ---------------------------
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+
+# VS Code
+.vscode/

@@ -1,0 +1,16 @@
+[
+  {
+    "title": "Need help deciding on chunk size for financial PDFs",
+    "content": "I'm working with lengthy financial reports. I tried a chunk size of 1000 tokens, but the model often misses key figures that are split across the boundary. Should I use semantic chunking instead? The documents are very structured.",
+    "url": "https://reddit.com/r/rag/post1",
+    "author": "FinanceFanatic",
+    "date": "2025-09-20"
+  },
+  {
+    "title": "Why does my RAG agent hallucinate with good context?",
+    "content": "My retrieval seems fine (high precision score), but the LLM still fabricates answers. I'm using GPT-3.5. Is it a prompting issue, or should I invest in a better reranker? I heard Cohere's reranker is good for filtering high-noise results.",
+    "url": "https://reddit.com/r/rag/post2",
+    "author": "LLMBuilder",
+    "date": "2025-09-25"
+  }
+]
