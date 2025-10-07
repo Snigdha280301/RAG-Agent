@@ -22,11 +22,13 @@ PERSIST_DIRECTORY = os.getenv("PERSIST_DIRECTORY", "./chroma_db")
 RAG_MODEL = os.getenv("RAG_MODEL", "gpt-4o-mini")
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
 MOCK_DATA_PATH = os.getenv("MOCK_DATA_PATH", "data/mock_r_rag_data.json")
+# NEW CONFIG: Threshold for filtering documents
+SIMILARITY_THRESHOLD = float(os.getenv("SIMILARITY_THRESHOLD", 0.8))
 
 # Global instance of the retriever
 rag_retriever: Optional[Any] = None
 
-# --- Custom Loaders ---
+# --- Custom Loaders (Unchanged) ---
 
 class RedditJSONLoader(BaseLoader):
     """Loads mock data as a fallback."""
@@ -91,6 +93,40 @@ class PRAWLoader(BaseLoader):
 
 # --- RAG Core Functions ---
 
+def filter_documents(query: str) -> List[Document]:
+    """
+    Performs retrieval and filters documents by a minimum similarity threshold.
+    This prevents irrelevant context from reaching the LLM.
+    """
+    global rag_retriever
+    if rag_retriever is None:
+        return []
+        
+    # Use similarity_search_with_score to get the confidence of the match
+    vectorstore = rag_retriever.vectorstore
+    
+    # Fetch a larger set (fetch_k=10) to select the best 5 from it
+    # Note: Chroma's similarity search returns distance, where a *lower* number is better (closer to 0)
+    # The default for OpenAIEmbeddings/Chroma is cosine distance (1 - cosine similarity).
+    # Thus, we filter where the distance is *less than* (1 - threshold).
+    
+    threshold_distance = 1 - SIMILARITY_THRESHOLD
+    
+    results_with_scores = vectorstore.similarity_search_with_score(
+        query,
+        k=5 # Only show the top 5 most relevant documents
+    )
+    
+    # Filter documents where the distance is below the threshold
+    # (i.e., similarity is high enough)
+    filtered_docs = [
+        doc for doc, score in results_with_scores 
+        if score <= threshold_distance
+    ]
+    
+    return filtered_docs
+
+
 def get_rag_chain():
     """Initializes and returns the complete RAG Chain."""
     global rag_retriever
@@ -101,6 +137,10 @@ def get_rag_chain():
 
     def format_docs(docs: List[Document]) -> str:
         """Formats the retrieved documents for the LLM prompt."""
+        if not docs:
+            # If no documents pass the threshold filter, return an empty string
+            return ""
+            
         formatted_list = []
         for doc in docs:
             source = doc.metadata.get("source", "N/A")
@@ -108,23 +148,41 @@ def get_rag_chain():
             formatted_list.append(f"{content}\nSource: {source}")
         return "\n\n---\n\n".join(formatted_list)
         
+    # --- REVISED SYSTEM PROMPT (Constraint) ---
+    SYSTEM_PROMPT = ( """
+        You are a highly specialized and professional **r/rag Knowledge Engineer**. Your role is to provide expert, synthesized technical support based **EXCLUSIVELY** on the content of the provided forum posts (CONTEXT).
+
+        ### CORE DIRECTIVES
+
+        1.  **Strict Grounding:** You **MUST** use the provided CONTEXT for all facts, definitions, and procedures. Do **NOT** use any external or general knowledge (e.g., general science, history, or facts unrelated to RAG, LLMs, or vector databases).
+        2.  **Synthesis and Elaboration:** Do not just quote; synthesize the information from the retrieved chunks into a **clear, coherent, and professional answer**.
+        3.  **Mandatory Citation:** You **MUST** cite the full `Source` URL from the context for every distinct piece of information or fact used in your answer. DO NOT display sources for irrelevant queries.
+
+        ---
+
+        CONTEXT:
+        {context}
+        """
+    )
+
     rag_prompt = ChatPromptTemplate.from_messages([
-        (
-            "system",
-            "You are an expert Reddit RAG support agent. Use the provided "
-            "forum posts (CONTEXT) to answer the user's QUESTION. "
-            "You MUST cite the 'Source' URL provided in the context for every relevant quote or fact used."
-            "\n\nCONTEXT:\n{context}"
-        ),
+        ("system", SYSTEM_PROMPT),
         ("human", "{question}"),
     ])
     
+    def extract_content(llm_output):
+        # If the output is a message object, return its content attribute.
+        if hasattr(llm_output, 'content'):
+            return llm_output.content
+        # Otherwise, return the output as a string (fallback).
+        return str(llm_output)
+
     rag_chain = (
-        {"context": itemgetter("question") | rag_retriever | RunnableLambda(format_docs),
+        {"context": itemgetter("question") | RunnableLambda(filter_documents) | RunnableLambda(format_docs),
          "question": itemgetter("question")}
         | rag_prompt
         | llm
-        | str
+        | RunnableLambda(extract_content) # <-- REVISED: Use a Runnable to extract clean content
     )
     return rag_chain
 
@@ -139,10 +197,8 @@ def index_data(target: str, limit: int):
         loader = RedditJSONLoader(MOCK_DATA_PATH)
     else:
         try:
-            # PRAWLoader raises RuntimeError on auth failure
             loader = PRAWLoader(target, limit)
         except RuntimeError as e:
-            # Fallback to local if PRAW auth fails
             print(f"PRAW failed for {target}. Falling back to local mock data. Error: {e}", file=sys.stderr)
             loader = RedditJSONLoader(MOCK_DATA_PATH)
 

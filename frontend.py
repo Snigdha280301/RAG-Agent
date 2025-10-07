@@ -42,12 +42,17 @@ def call_rag_backend(query: str) -> Dict[str, Any]:
 
 def display_sources(sources: List[str]):
     """Displays the unique source links in a collapsible expander."""
+
+    if not sources:
+        return
     clean_sources = [s for s in sources if s and s.startswith("http")]
+
+    if not clean_sources:
+        return
     
-    if clean_sources:
-        with st.expander("📚 Sources Retrieved (Click to Expand)"):
-            for source in clean_sources:
-                st.markdown(f"- [Source Link]({source})")
+    with st.expander("📚 Sources Retrieved (Click to Expand)"):
+        for source in clean_sources:
+            st.markdown(f"- [Source Link]({source})")
             
 # --- Streamlit UI ---
 
@@ -59,7 +64,7 @@ st.title("Reddit RAG Agent")
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
-        if message.get("sources"):
+        if message.get("sources") and message["sources"]: 
             display_sources(message["sources"])
             
 
@@ -100,7 +105,8 @@ if prompt := st.chat_input("Ask a question based on the subreddit..."):
 
     with st.chat_message("assistant"):
         st.markdown(final_answer) # Display the cleaned text
-        display_sources(sources) # Display sources after the answer
+        if sources:
+            display_sources(sources) # Display sources after the answer
 
     # 4. Add AI response to session history
     st.session_state.messages.append({"role": "assistant", "content": final_answer, "sources": sources})
